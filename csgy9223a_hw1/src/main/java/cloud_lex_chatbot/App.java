@@ -1,4 +1,4 @@
-package cloud-lex-chatbot;
+package cloud_lex_chatbot;
 
 /**
  * Hello world!
