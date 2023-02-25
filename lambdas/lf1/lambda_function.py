@@ -125,6 +125,7 @@ def isvalid_cuisine(cuisine):
         'convenience', 'sandwiches', 'desserts', 'burgers', 'salad', 'coffee', 'thai', 'brazilian', ]
     return cuisine.lower() in valid_cuisines
 
+
 def validate_dining(slots: dict) -> dict:
     location = try_ex(lambda: slots['Location'])
     cuisine = try_ex(lambda: slots['Cuisine'])
@@ -140,7 +141,7 @@ def validate_dining(slots: dict) -> dict:
             "We currently do not support {} as a valid Location. Can you try a different city?".format(location)
         )
         
-    if cuisine and not isvalid_cuisine(cusine):
+    if cuisine and not isvalid_cuisine(cuisine):
         return build_validation_result(
             False,
             "Cuisine",
@@ -163,37 +164,6 @@ def validate_dining(slots: dict) -> dict:
         
     
     return { 'isValid': True }
-
-def validate_hotel(slots):
-    location = try_ex(lambda: slots['Location'])
-    checkin_date = try_ex(lambda: slots['CheckInDate'])
-    nights = safe_int(try_ex(lambda: slots['Nights']))
-    room_type = try_ex(lambda: slots['RoomType'])
-
-    if location and not isvalid_city(location):
-        return build_validation_result(
-            False,
-            'Location',
-            'We currently do not support {} as a valid destination.  Can you try a different city?'.format(location)
-        )
-
-    if checkin_date:
-        if not isvalid_date(checkin_date):
-            return build_validation_result(False, 'CheckInDate', 'I did not understand your check in date.  When would you like to check in?')
-        if datetime.datetime.strptime(checkin_date, '%Y-%m-%d').date() <= datetime.date.today():
-            return build_validation_result(False, 'CheckInDate', 'Reservations must be scheduled at least one day in advance.  Can you try a different date?')
-
-    if nights is not None and (nights < 1 or nights > 30):
-        return build_validation_result(
-            False,
-            'Nights',
-            'You can make a reservations for from one to thirty nights.  How many nights would you like to stay for?'
-        )
-
-    if room_type and not isvalid_room_type(room_type):
-        return build_validation_result(False, 'RoomType', 'I did not recognize that room type.  Would you like to stay in a queen, king, or deluxe room?')
-
-    return {'isValid': True}
 
 
 """ --- Functions that control the bot's behavior --- """
@@ -232,8 +202,8 @@ def handle_dining_intent(intent_request: dict) -> dict:
             slots = intent_request['currentIntent']['slots']
             slots[validation_result['violatedSlot']] = None
             
-            return elicitSlot(
-                    sessionAttributes,
+            return elicit_slot(
+                    session_attributes,
                     intent_request['currentIntent']['name'],
                     slots,
                     validation_result['violatedSlot'],
@@ -264,79 +234,6 @@ def handle_thank_you(intent_request: dict) -> dict:
         {
             "contentType": "PlainText",
             "content": "Thanks for chatting with me!"
-        }
-    )
-    
-    
-
-def book_hotel(intent_request):
-    """
-    Performs dialog management and fulfillment for booking a hotel.
-
-    Beyond fulfillment, the implementation for this intent demonstrates the following:
-    1) Use of elicitSlot in slot validation and re-prompting
-    2) Use of sessionAttributes to pass information that can be used to guide conversation
-    """
-
-    location = try_ex(lambda: intent_request['currentIntent']['slots']['Location'])
-    checkin_date = try_ex(lambda: intent_request['currentIntent']['slots']['CheckInDate'])
-    nights = safe_int(try_ex(lambda: intent_request['currentIntent']['slots']['Nights']))
-
-    room_type = try_ex(lambda: intent_request['currentIntent']['slots']['RoomType'])
-    session_attributes = intent_request['sessionAttributes'] if intent_request['sessionAttributes'] is not None else {}
-
-    # Load confirmation history and track the current reservation.
-    reservation = json.dumps({
-        'ReservationType': 'Hotel',
-        'Location': location,
-        'RoomType': room_type,
-        'CheckInDate': checkin_date,
-        'Nights': nights
-    })
-
-    session_attributes['currentReservation'] = reservation
-
-    if intent_request['invocationSource'] == 'DialogCodeHook':
-        # Validate any slots which have been specified.  If any are invalid, re-elicit for their value
-        validation_result = validate_hotel(intent_request['currentIntent']['slots'])
-        if not validation_result['isValid']:
-            slots = intent_request['currentIntent']['slots']
-            slots[validation_result['violatedSlot']] = None
-
-            return elicit_slot(
-                session_attributes,
-                intent_request['currentIntent']['name'],
-                slots,
-                validation_result['violatedSlot'],
-                validation_result['message']
-            )
-
-        # Otherwise, let native DM rules determine how to elicit for slots and prompt for confirmation.  Pass price
-        # back in sessionAttributes once it can be calculated; otherwise clear any setting from sessionAttributes.
-        if location and checkin_date and nights and room_type:
-            # The price of the hotel has yet to be confirmed.
-            price = generate_hotel_price(location, nights, room_type)
-            session_attributes['currentReservationPrice'] = price
-        else:
-            try_ex(lambda: session_attributes.pop('currentReservationPrice'))
-
-        session_attributes['currentReservation'] = reservation
-        return delegate(session_attributes, intent_request['currentIntent']['slots'])
-
-    # Booking the hotel.  In a real application, this would likely involve a call to a backend service.
-    logger.debug('bookHotel under={}'.format(reservation))
-
-    try_ex(lambda: session_attributes.pop('currentReservationPrice'))
-    try_ex(lambda: session_attributes.pop('currentReservation'))
-    session_attributes['lastConfirmedReservation'] = reservation
-
-    return close(
-        session_attributes,
-        'Fulfilled',
-        {
-            'contentType': 'PlainText',
-            'content': 'Thanks, I have placed your reservation.   Please let me know if you would like to book a car '
-                       'rental, or another hotel.'
         }
     )
 
