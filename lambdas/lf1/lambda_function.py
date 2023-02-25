@@ -111,54 +111,58 @@ def build_validation_result(isvalid, violated_slot, message_content):
         'message': {'contentType': 'PlainText', 'content': message_content}
     }
 
+def isvalid_city(city):
+    valid_cities = ['new york', 'los angeles', 'chicago', 'houston', 'philadelphia', 'phoenix', 'san antonio',
+                    'san diego', 'dallas', 'san jose', 'austin', 'jacksonville', 'san francisco', 'indianapolis',
+                    'columbus', 'fort worth', 'charlotte', 'detroit', 'el paso', 'seattle', 'denver', 'washington dc',
+                    'memphis', 'boston', 'nashville', 'baltimore', 'portland']
+    return city.lower() in valid_cities
+    
+    
+def isvalid_cuisine(cuisine):
+    valid_cuisines = [ 'vegetarian', 'seafood', 'indian', 'chinese', 'american', 'italian', 'japanese',
+        'mexican', 'mediterranean', 'vegan', 'chicken', 'steak', 'noodles', 'fast food', 'deli', 
+        'convenience', 'sandwiches', 'desserts', 'burgers', 'salad', 'coffee', 'thai', 'brazilian', ]
+    return cuisine.lower() in valid_cuisines
 
-def validate_book_car(slots):
-    pickup_city = try_ex(lambda: slots['PickUpCity'])
-    pickup_date = try_ex(lambda: slots['PickUpDate'])
-    return_date = try_ex(lambda: slots['ReturnDate'])
-    driver_age = safe_int(try_ex(lambda: slots['DriverAge']))
-    car_type = try_ex(lambda: slots['CarType'])
-
-    if pickup_city and not isvalid_city(pickup_city):
+def validate_dining(slots: dict) -> dict:
+    location = try_ex(lambda: slots['Location'])
+    cuisine = try_ex(lambda: slots['Cuisine'])
+    date = try_ex(lambda: slots['date'])
+    time = try_ex(lambda: slots['time'])
+    count = try_ex(lambda: slots['count'])
+    phone = try_ex(lambda: slots['phone'])
+    
+    if location and not isvalid_city(location):
         return build_validation_result(
             False,
-            'PickUpCity',
-            'We currently do not support {} as a valid destination.  Can you try a different city?'.format(pickup_city)
+            "Location",
+            "We currently do not support {} as a valid Location. Can you try a different city?".format(location)
         )
-
-    if pickup_date:
-        if not isvalid_date(pickup_date):
-            return build_validation_result(False, 'PickUpDate', 'I did not understand your departure date.  When would you like to pick up your car rental?')
-        if datetime.datetime.strptime(pickup_date, '%Y-%m-%d').date() <= datetime.date.today():
-            return build_validation_result(False, 'PickUpDate', 'Reservations must be scheduled at least one day in advance.  Can you try a different date?')
-
-    if return_date:
-        if not isvalid_date(return_date):
-            return build_validation_result(False, 'ReturnDate', 'I did not understand your return date.  When would you like to return your car rental?')
-
-    if pickup_date and return_date:
-        if dateutil.parser.parse(pickup_date) >= dateutil.parser.parse(return_date):
-            return build_validation_result(False, 'ReturnDate', 'Your return date must be after your pick up date.  Can you try a different return date?')
-
-        if get_day_difference(pickup_date, return_date) > 30:
-            return build_validation_result(False, 'ReturnDate', 'You can reserve a car for up to thirty days.  Can you try a different return date?')
-
-    if driver_age is not None and driver_age < 18:
+        
+    if cuisine and not isvalid_cuisine(cusine):
         return build_validation_result(
             False,
-            'DriverAge',
-            'Your driver must be at least eighteen to rent a car.  Can you provide the age of a different driver?'
+            "Cuisine",
+            "We currently do not support {} as a valid Cuisine. Can you try a different one?".format(location)
         )
-
-    if car_type and not isvalid_car_type(car_type):
+    
+    if date:
+        if not isvalid_date(date):
+            return build_validation_result(False, 'date', 'I did not understand your reservation date.  When would you like to make your reservation?')
+        if datetime.datetime.strptime(date, '%Y-%m-%d').date() <= datetime.date.today():
+            return build_validation_result(False, 'date', 'Reservations must be scheduled at least one day in advance.  Can you try a different date?')
+            
+    
+    if count is not None and (count < 1 or count > 8):
         return build_validation_result(
             False,
-            'CarType',
-            'I did not recognize that model.  What type of car would you like to rent?  '
-            'Popular cars are economy, midsize, or luxury')
-
-    return {'isValid': True}
-
+            'count',
+            'You can make a reservations for from one to 8 guests.  How many guests will be attending?'
+        )
+        
+    
+    return { 'isValid': True }
 
 def validate_hotel(slots):
     location = try_ex(lambda: slots['Location'])
@@ -209,6 +213,61 @@ def handle_greet(intent_request):
             'content': 'Hi there, how can I help you?'
         }
     )
+    
+def handle_dining_intent(intent_request: dict) -> dict:
+    location = try_ex(lambda: intent_request['currentIntent']['slots']['Location'])
+    cuisine = try_ex(lambda: intent_request['currentIntent']['slots']['Cuisine'])
+    date = try_ex(lambda: intent_request['currentIntent']['slots']['date'])
+    time = try_ex(lambda: intent_request['currentIntent']['slots']['time'])
+    count = try_ex(lambda: intent_request['currentIntent']['slots']['count'])
+    phone = try_ex(lambda: intent_request['currentIntent']['slots']['phone'])
+    
+    session_attributes = intent_request['sessionAttributes'] if intent_request['sessionAttributes'] is not None else {}
+    
+    if intent_request['invocationSource'] == 'DialogCodeHook':
+        # validate any slots which have been specified. If any are invalid re-elicit for their value
+        validation_result = validate_dining(intent_request['currentIntent']['slots'])
+        if not validation_result['isValid']:
+            
+            slots = intent_request['currentIntent']['slots']
+            slots[validation_result['violatedSlot']] = None
+            
+            return elicitSlot(
+                    sessionAttributes,
+                    intent_request['currentIntent']['name'],
+                    slots,
+                    validation_result['violatedSlot'],
+                    validation_result['message'],
+                )
+        
+        # continue eliciting slots if need be
+        return delegate(session_attributes, intent_request['currentIntent']['slots'])
+    
+    # TODO push info to SQS
+    
+    return close(
+        session_attributes,
+        'Fulfilled',
+        {
+            'contentType': 'PlainText',
+            'content': ("Thanks, you're all set! You should receive my suggestions "
+            "via SMS in a few minutes!")
+        }
+    )
+    
+
+def handle_thank_you(intent_request: dict) -> dict:
+    session_attributes = intent_request['sessionAttributes'] if intent_request['sessionAttributes'] is not None else {}
+    return close(
+        session_attributes,
+        "Fulfilled",
+        {
+            "contentType": "PlainText",
+            "content": "Thanks for chatting with me!"
+        }
+    )
+    
+    
 
 def book_hotel(intent_request):
     """
@@ -282,160 +341,6 @@ def book_hotel(intent_request):
     )
 
 
-def book_car(intent_request):
-    """
-    Performs dialog management and fulfillment for booking a car.
-
-    Beyond fulfillment, the implementation for this intent demonstrates the following:
-    1) Use of elicitSlot in slot validation and re-prompting
-    2) Use of sessionAttributes to pass information that can be used to guide conversation
-    """
-    slots = intent_request['currentIntent']['slots']
-    pickup_city = slots['PickUpCity']
-    pickup_date = slots['PickUpDate']
-    return_date = slots['ReturnDate']
-    driver_age = slots['DriverAge']
-    car_type = slots['CarType']
-    confirmation_status = intent_request['currentIntent']['confirmationStatus']
-    session_attributes = intent_request['sessionAttributes'] if intent_request['sessionAttributes'] is not None else {}
-    last_confirmed_reservation = try_ex(lambda: session_attributes['lastConfirmedReservation'])
-    if last_confirmed_reservation:
-        last_confirmed_reservation = json.loads(last_confirmed_reservation)
-    confirmation_context = try_ex(lambda: session_attributes['confirmationContext'])
-
-    # Load confirmation history and track the current reservation.
-    reservation = json.dumps({
-        'ReservationType': 'Car',
-        'PickUpCity': pickup_city,
-        'PickUpDate': pickup_date,
-        'ReturnDate': return_date,
-        'CarType': car_type
-    })
-    session_attributes['currentReservation'] = reservation
-
-    if pickup_city and pickup_date and return_date and driver_age and car_type:
-        # Generate the price of the car in case it is necessary for future steps.
-        price = generate_car_price(pickup_city, get_day_difference(pickup_date, return_date), driver_age, car_type)
-        session_attributes['currentReservationPrice'] = price
-
-    if intent_request['invocationSource'] == 'DialogCodeHook':
-        # Validate any slots which have been specified.  If any are invalid, re-elicit for their value
-        validation_result = validate_book_car(intent_request['currentIntent']['slots'])
-        if not validation_result['isValid']:
-            slots[validation_result['violatedSlot']] = None
-            return elicit_slot(
-                session_attributes,
-                intent_request['currentIntent']['name'],
-                slots,
-                validation_result['violatedSlot'],
-                validation_result['message']
-            )
-
-        # Determine if the intent (and current slot settings) has been denied.  The messaging will be different
-        # if the user is denying a reservation he initiated or an auto-populated suggestion.
-        if confirmation_status == 'Denied':
-            # Clear out auto-population flag for subsequent turns.
-            try_ex(lambda: session_attributes.pop('confirmationContext'))
-            try_ex(lambda: session_attributes.pop('currentReservation'))
-            if confirmation_context == 'AutoPopulate':
-                return elicit_slot(
-                    session_attributes,
-                    intent_request['currentIntent']['name'],
-                    {
-                        'PickUpCity': None,
-                        'PickUpDate': None,
-                        'ReturnDate': None,
-                        'DriverAge': None,
-                        'CarType': None
-                    },
-                    'PickUpCity',
-                    {
-                        'contentType': 'PlainText',
-                        'content': 'Where would you like to make your car reservation?'
-                    }
-                )
-
-            return delegate(session_attributes, intent_request['currentIntent']['slots'])
-
-        if confirmation_status == 'None':
-            # If we are currently auto-populating but have not gotten confirmation, keep requesting for confirmation.
-            if (not pickup_city and not pickup_date and not return_date and not driver_age and not car_type)\
-                    or confirmation_context == 'AutoPopulate':
-                if last_confirmed_reservation and try_ex(lambda: last_confirmed_reservation['ReservationType']) == 'Hotel':
-                    # If the user's previous reservation was a hotel - prompt for a rental with
-                    # auto-populated values to match this reservation.
-                    session_attributes['confirmationContext'] = 'AutoPopulate'
-                    return confirm_intent(
-                        session_attributes,
-                        intent_request['currentIntent']['name'],
-                        {
-                            'PickUpCity': last_confirmed_reservation['Location'],
-                            'PickUpDate': last_confirmed_reservation['CheckInDate'],
-                            'ReturnDate': add_days(
-                                last_confirmed_reservation['CheckInDate'], last_confirmed_reservation['Nights']
-                            ),
-                            'CarType': None,
-                            'DriverAge': None
-                        },
-                        {
-                            'contentType': 'PlainText',
-                            'content': 'Is this car rental for your {} night stay in {} on {}?'.format(
-                                last_confirmed_reservation['Nights'],
-                                last_confirmed_reservation['Location'],
-                                last_confirmed_reservation['CheckInDate']
-                            )
-                        }
-                    )
-
-            # Otherwise, let native DM rules determine how to elicit for slots and/or drive confirmation.
-            return delegate(session_attributes, intent_request['currentIntent']['slots'])
-
-        # If confirmation has occurred, continue filling any unfilled slot values or pass to fulfillment.
-        if confirmation_status == 'Confirmed':
-            # Remove confirmationContext from sessionAttributes so it does not confuse future requests
-            try_ex(lambda: session_attributes.pop('confirmationContext'))
-            if confirmation_context == 'AutoPopulate':
-                if not driver_age:
-                    return elicit_slot(
-                        session_attributes,
-                        intent_request['currentIntent']['name'],
-                        intent_request['currentIntent']['slots'],
-                        'DriverAge',
-                        {
-                            'contentType': 'PlainText',
-                            'content': 'How old is the driver of this car rental?'
-                        }
-                    )
-                elif not car_type:
-                    return elicit_slot(
-                        session_attributes,
-                        intent_request['currentIntent']['name'],
-                        intent_request['currentIntent']['slots'],
-                        'CarType',
-                        {
-                            'contentType': 'PlainText',
-                            'content': 'What type of car would you like? Popular models are '
-                                       'economy, midsize, and luxury.'
-                        }
-                    )
-
-            return delegate(session_attributes, intent_request['currentIntent']['slots'])
-
-    # Booking the car.  In a real application, this would likely involve a call to a backend service.
-    logger.debug('bookCar at={}'.format(reservation))
-    del session_attributes['currentReservationPrice']
-    del session_attributes['currentReservation']
-    session_attributes['lastConfirmedReservation'] = reservation
-    return close(
-        session_attributes,
-        'Fulfilled',
-        {
-            'contentType': 'PlainText',
-            'content': 'Thanks, I have placed your reservation.'
-        }
-    )
-
-
 # --- Intents ---
 
 
@@ -452,9 +357,9 @@ def dispatch(intent_request):
     if intent_name == 'GreetingIntent':
         return handle_greet(intent_request)
     elif intent_name == 'DiningingSuggestionIntent':
-        return Exception("DiningSuggestionIntent has not been implemented yet.")
+        return handle_dining_intent(intent_request)
     elif intent_name == 'ThankYouIntent':
-        raise Exception("ThankYouIntent has not been implemented")
+        raise handle_thank_you(intent_request)
 
     raise Exception('Intent with name ' + intent_name + ' not supported')
 
