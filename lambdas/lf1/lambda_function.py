@@ -24,48 +24,58 @@ logger.setLevel(logging.DEBUG)
 
 def elicit_slot(session_attributes, intent_name, slots, slot_to_elicit, message):
     return {
-        'sessionAttributes': session_attributes,
-        'dialogAction': {
-            'type': 'ElicitSlot',
-            'intentName': intent_name,
-            'slots': slots,
-            'slotToElicit': slot_to_elicit,
-            'message': message
-        }
+        'sessionState': {
+            'sessionAttributes': session_attributes,
+            'dialogAction': {
+                'type': 'ElicitSlot',
+                'slotToElicit': slot_to_elicit,
+            },
+            'intent': {
+                'name': intent_name,
+                "slots": slots,
+            }
+        },
+        'messages': [
+            {
+                "contentType": "PlainText",
+                "content": message
+            }
+        ]
     }
 
 
-def confirm_intent(session_attributes, intent_name, slots, message):
-    return {
-        'sessionAttributes': session_attributes,
-        'dialogAction': {
-            'type': 'ConfirmIntent',
-            'intentName': intent_name,
-            'slots': slots,
-            'message': message
-        }
-    }
-
-
-def close(session_attributes, fulfillment_state, message):
+def close(session_attributes, fulfillment_state, message, intent_name):
     response = {
-        'sessionAttributes': session_attributes,
-        'dialogAction': {
-            'type': 'Close',
-            'fulfillmentState': fulfillment_state,
-            'message': message
+        'sessionState': {
+            'sessionAttributes': session_attributes,
+            'dialogAction': {
+                'type': 'Close',
+            },
+            'intent': {
+                'name': intent_name,
+                'state': "Fulfilled"
+            },
+            'messages': [
+                message 
+            ]
         }
     }
 
     return response
 
 
-def delegate(session_attributes, slots):
+def delegate(session_attributes, slots, intent):
     return {
-        'sessionAttributes': session_attributes,
-        'dialogAction': {
-            'type': 'Delegate',
-            'slots': slots
+        "sessionState": {
+            'sessionAttributes': session_attributes,
+            'dialogAction': {
+                'type': 'Delegate',
+            },
+            "intent": {
+                "name": intent,
+                "slots": slots,
+                "state": "ReadyForFulfillment",
+            }
         }
     }
 
@@ -127,6 +137,7 @@ def isvalid_cuisine(cuisine):
 
 
 def validate_dining(slots: dict) -> dict:
+    print(f"validate slots: {slots}")
     location = try_ex(lambda: slots['Location'])
     cuisine = try_ex(lambda: slots['Cuisine'])
     date = try_ex(lambda: slots['date'])
@@ -134,28 +145,28 @@ def validate_dining(slots: dict) -> dict:
     count = try_ex(lambda: slots['count'])
     phone = try_ex(lambda: slots['phone'])
     
-    if location and not isvalid_city(location):
+    if location and not isvalid_city(location['value']['interpretedValue']):
         return build_validation_result(
             False,
             "Location",
-            "We currently do not support {} as a valid Location. Can you try a different city?".format(location)
+            "We currently do not support {} as a valid Location. Can you try a different city?".format(location['value']['interpretedValue'])
         )
         
-    if cuisine and not isvalid_cuisine(cuisine):
+    if cuisine and not isvalid_cuisine(cuisine['value']['interpretedValue']):
         return build_validation_result(
             False,
             "Cuisine",
-            "We currently do not support {} as a valid Cuisine. Can you try a different one?".format(location)
+            "We currently do not support {} as a valid Cuisine. Can you try a different one?".format(cuisine['value']['interpretedValue'])
         )
     
     if date:
-        if not isvalid_date(date):
+        if not isvalid_date(date['value']['interpretedValue']):
             return build_validation_result(False, 'date', 'I did not understand your reservation date.  When would you like to make your reservation?')
-        if datetime.datetime.strptime(date, '%Y-%m-%d').date() <= datetime.date.today():
+        if datetime.datetime.strptime(date['value']['interpretedValue'], '%Y-%m-%d').date() <= datetime.date.today():
             return build_validation_result(False, 'date', 'Reservations must be scheduled at least one day in advance.  Can you try a different date?')
             
     
-    if count is not None and (count < 1 or count > 8):
+    if count is not None and (int(count['value']['interpretedValue']) < 1 or int(count['value']['interpretedValue']) > 8):
         return build_validation_result(
             False,
             'count',
@@ -174,67 +185,86 @@ def handle_greet(intent_request):
     """
     logger.debug("Recieved GreetingIntent\nintent_request: {}".format(json.dumps(intent_request)))
     
-    session_attributes = intent_request['sessionAttributes'] if intent_request['sessionAttributes'] is not None else {}
+    session_attributes = intent_request.get('sessionAttributes') if intent_request.get('sessionAttributes') is not None else {}
     return close(
         session_attributes,
         'Fulfilled',
         {
             'contentType': 'PlainText',
             'content': 'Hi there, how can I help you?'
-        }
+        },
+        intent_request['sessionState']['intent']['name']
     )
     
 def handle_dining_intent(intent_request: dict) -> dict:
-    location = try_ex(lambda: intent_request['currentIntent']['slots']['Location'])
-    cuisine = try_ex(lambda: intent_request['currentIntent']['slots']['Cuisine'])
-    date = try_ex(lambda: intent_request['currentIntent']['slots']['date'])
-    time = try_ex(lambda: intent_request['currentIntent']['slots']['time'])
-    count = try_ex(lambda: intent_request['currentIntent']['slots']['count'])
-    phone = try_ex(lambda: intent_request['currentIntent']['slots']['phone'])
     
-    session_attributes = intent_request['sessionAttributes'] if intent_request['sessionAttributes'] is not None else {}
+    print("starting handle_dining_intent code hook")
+    
+    location = try_ex(lambda: intent_request['sessionState']['intent']['slots']['Location'])
+    cuisine = try_ex(lambda: intent_request['sessionState']['intent']['slots']['Cuisine'])
+    date = try_ex(lambda: intent_request['sessionState']['intent']['slots']['date'])
+    time = try_ex(lambda: intent_request['sessionState']['intent']['slots']['time'])
+    count = try_ex(lambda: intent_request['sessionState']['intent']['slots']['count'])
+    phone = try_ex(lambda: intent_request['sessionState']['intent']['slots']['phone'])
+    
+    session_attributes = intent_request.get('sessionAttributes') if intent_request.get('sessionAttributes') is not None else {}
     
     if intent_request['invocationSource'] == 'DialogCodeHook':
+        print("invocation source was DialogCodeHook")
         # validate any slots which have been specified. If any are invalid re-elicit for their value
-        validation_result = validate_dining(intent_request['currentIntent']['slots'])
+        validation_result = validate_dining(intent_request['sessionState']['intent']['slots'])
         if not validation_result['isValid']:
             
-            slots = intent_request['currentIntent']['slots']
+            slots = intent_request['sessionState']['intent']['slots']
             slots[validation_result['violatedSlot']] = None
             
             return elicit_slot(
                     session_attributes,
-                    intent_request['currentIntent']['name'],
+                    intent_request['sessionState']['intent']['name'],
                     slots,
                     validation_result['violatedSlot'],
                     validation_result['message'],
                 )
         
         # continue eliciting slots if need be
-        return delegate(session_attributes, intent_request['currentIntent']['slots'])
+        return delegate(session_attributes, intent_request['sessionState']['intent']['slots'],
+            intent_request['sessionState']['intent']['name'])
     
+    elif intent_request['invocationSource'] == "FulfillmentCodeHook":
+        print("invocation was FulfillmentCodeHook")
+        print("fulfillment complete")
+        return close(
+            session_attributes,
+            "Fulfilled",
+            {
+                'contentType': 'PlainText',
+                'content': "Thanks, you're all set! You should receive my suggestions via SMS in a few minutes!"
+            },
+            intent_request['sessionState']['intent']['name'],
+        )
     # TODO push info to SQS
-    
+    print("catch all")
     return close(
         session_attributes,
         'Fulfilled',
         {
             'contentType': 'PlainText',
-            'content': ("Thanks, you're all set! You should receive my suggestions "
-            "via SMS in a few minutes!")
-        }
+            'content': "Thanks, you're all set! You should receive my suggestions via SMS in a few minutes!"
+        },
+        intent_request['sessionState']['intent']['name']
     )
     
 
 def handle_thank_you(intent_request: dict) -> dict:
-    session_attributes = intent_request['sessionAttributes'] if intent_request['sessionAttributes'] is not None else {}
+    session_attributes = intent_request.get('sessionAttributes') if intent_request.get('sessionAttributes') is not None else {}
     return close(
         session_attributes,
         "Fulfilled",
         {
             "contentType": "PlainText",
             "content": "Thanks for chatting with me!"
-        }
+        },
+        intent_request['sessionState']['intent']['name']
     )
 
 
@@ -245,15 +275,15 @@ def dispatch(intent_request):
     """
     Called when the user specifies an intent for this bot.
     """
+    print(intent_request)
+    logger.debug('dispatch intentName={}'.format(intent_request['sessionState']['intent']['name']))
 
-    logger.debug('dispatch userId={}, intentName={}'.format(intent_request['userId'], intent_request['currentIntent']['name']))
-
-    intent_name = intent_request['currentIntent']['name']
+    intent_name = intent_request['sessionState']['intent']['name']
 
     # Dispatch to your bot's intent handlers
     if intent_name == 'GreetingIntent':
         return handle_greet(intent_request)
-    elif intent_name == 'DiningingSuggestionIntent':
+    elif intent_name == 'DiningSuggestionIntent':
         return handle_dining_intent(intent_request)
     elif intent_name == 'ThankYouIntent':
         raise handle_thank_you(intent_request)
@@ -272,6 +302,9 @@ def lambda_handler(event, context):
     # By default, treat the user request as coming from the America/New_York time zone.
     os.environ['TZ'] = 'America/New_York'
     time.tzset()
-    logger.debug('event.bot.name={}'.format(event['bot']['name']))
+    # botname = ""
+    
+    # logger.debug('event.bot.name={}'.format(event['bot']['name']))
+    logger.debug("event received.\n{}".format(event))
 
     return dispatch(event)

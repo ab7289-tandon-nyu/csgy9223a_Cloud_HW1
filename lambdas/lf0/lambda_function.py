@@ -27,17 +27,21 @@ def create_bot_response(messages: list):
         messages=messages
     )        
         
-def create_simple_message(msg_text: str):
-    dt = datetime.now()
-    ts = datetime.timestamp(dt)
-    unstructured = create_unstructured_message(
-        str(uuid4()),
-        msg_text,
-        ts)
+def create_simple_message(msgs: list):
+    parsed_messages = []
+    for msg in msgs:
+        dt = datetime.now()
+        ts = datetime.timestamp(dt)
+        unstructured = create_unstructured_message(
+            str(uuid4()),
+            msg,
+            ts)
+        parsed_messages.append(create_message(unstructured))
     
-    message = create_message(unstructured)
-    bot_response = create_bot_response([message])
+    bot_response = create_bot_response(parsed_messages)
     return bot_response
+    
+
     
 def parse_response(response: dict):
     metadata = response["ResponseMetadata"]
@@ -45,8 +49,12 @@ def parse_response(response: dict):
     # if http_status == 200:
     #     messages = response['messages']
     # else:
-    messages = response['messages']
-    return messages[0]['content']
+    if response.get('messages') is not None:
+        messages = response['messages']
+        return list([msg['content'] for msg in messages])
+    else:
+        message = "What can I help you with?"
+        return [ message ]
         
     
 def post_to_bot(event):
@@ -56,22 +64,22 @@ def post_to_bot(event):
     print(f"Parsed message: {msg}")
     
     response = client.recognize_text(
-        botId='GV9YXEA5BJ',
-        botAliasId='VEY7QVDD0A',
+        botId='EZOWQCMXTB',
+        botAliasId='49P3WS4KR0',
         localeId='en_US',
         sessionId='testsession',
         text=msg,
     )
+    print(f"received response from lex: {response}")
     
     return parse_response(response)
     
-    print(f"received response from lex: {response}")
 
 def lambda_handler(event, context):
     print(f"event: {event}")
     print(f"context: {context}")
     rsp_msg: str = post_to_bot(event)
-    # resp: dict = create_simple_message("Hello World!")
+    
     resp: dict = create_simple_message(rsp_msg)
     
     return resp
