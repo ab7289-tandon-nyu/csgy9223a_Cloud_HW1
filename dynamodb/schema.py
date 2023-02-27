@@ -1,9 +1,7 @@
 
 import boto3
-from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 import logging
-import json
 import requests
 import os
 
@@ -14,13 +12,13 @@ class YelpAPI:
     def __init__(self, base_url: str = "https://api.yelp.com/v3/") -> None:
         self.base_url: str = base_url
 
-        self.headers: dict = { "Accept": "Application/json" }
+        self.headers: dict = {"Accept": "Application/json"}
         self.get_businesses_api: str = "businesses/search"
         self.get_buisness_api: str = "businesses/{}"
 
     def get_businesses(self, location: str, cuisine: str, limit: int) -> dict:
         api_key = os.getenv("YELP_API_KEY")
-        
+
         params = {
             "location": location.replace(" ", "+"),
             "term": cuisine.replace(" ", "+"),
@@ -29,26 +27,48 @@ class YelpAPI:
 
         url: str = self.base_url + self.get_businesses_api
 
-        auth = { "Authorization": f"Bearer {api_key}"}
+        auth = {"Authorization": f"Bearer {api_key}"}
 
-        response = requests.get(url, params=params, headers={ **self.headers, **auth})
+        result: list = []
 
-        response.raise_for_status()
-        return response.json()
+        if limit > 50:
+            # need to paginate
+            params["limit"] = 50  # max limit for yelp API is 50
+            params["offset"] = 0
+
+            while params["offset"] < limit:
+                logger.info(
+                    f"calling with offset: {params['offset']}, limit: {limit}")
+                response = requests.get(url, params=params, headers={
+                                        **self.headers, **auth})
+                response.raise_for_status()
+                response_obj: dict = response.json()
+                result.extend(response_obj.get("businesses"))
+                params["offset"] += 50
+
+        else:
+            response = requests.get(url, params=params, headers={
+                                    **self.headers, **auth})
+            response.raise_for_status()
+            response: dict = response.json()
+            result = response.get("businesses")
+
+        return result
 
 
 class RestaurantTable:
-    
+
     TABLE_NAME: str = "yelp-restaurants"
-    
-    """Encapsulates an Amazon DynamoDB table of movie data."""
+
+    """Encapsulates an Amazon DynamoDB table of restaurant data."""
+
     def __init__(self, dyn_resource):
         """
         :param dyn_resource: A Boto3 DynamoDB resource.
         """
         self.dyn_resource = dyn_resource
         self.table = None
-    
+
     def exists(self, table_name):
         """
         Determines whether a table exists. As a side effect, stores the table in
@@ -72,7 +92,7 @@ class RestaurantTable:
         else:
             self.table = table
         return exists
-    
+
     def write_batch(self, restaurants):
         """
         Fills an Amazon DynamoDB table with the specified data, using the Boto3
@@ -94,7 +114,7 @@ class RestaurantTable:
                 "Couldn't load data into table %s. Here's why: %s: %s", self.table.name,
                 err.response['Error']['Code'], err.response['Error']['Message'])
             raise
-    
+
     def add_restaurant(self, restaurant: dict):
         """
         Adds a restaurant to the table.
@@ -109,41 +129,3 @@ class RestaurantTable:
                 err.response['Error']['Code'], err.response['Error']['Message'])
             raise
     # snippet-end:[python.example_code.dynamodb.PutItem]
-
-    # snippet-start:[python.example_code.dynamodb.GetItem]
-    def get_restaurant(self, title, year):
-        """
-        Gets movie data from the table for a specific movie.
-        :param title: The title of the movie.
-        :param year: The release year of the movie.
-        :return: The data about the requested movie.
-        """
-        try:
-            response = self.table.get_item(Key={'year': year, 'title': title})
-        except ClientError as err:
-            logger.error(
-                "Couldn't get movie %s from table %s. Here's why: %s: %s",
-                title, self.table.name,
-                err.response['Error']['Code'], err.response['Error']['Message'])
-            raise
-        else:
-            return response['Item']
-    
-
-    def query_movies(self, year):
-        """
-        Queries for movies that were released in the specified year.
-        :param year: The year to query.
-        :return: The list of movies that were released in the specified year.
-        """
-        try:
-            response = self.table.query(KeyConditionExpression=Key('year').eq(year))
-        except ClientError as err:
-            logger.error(
-                "Couldn't query for movies released in %s. Here's why: %s: %s", year,
-                err.response['Error']['Code'], err.response['Error']['Message'])
-            raise
-        else:
-            return response['Items']
-    # snippet-end:[python.example_code.dynamodb.Query]
-    
