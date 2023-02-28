@@ -14,6 +14,8 @@ import time
 import os
 import dateutil.parser
 import logging
+import boto3
+from uuid import uuid4
 
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
@@ -173,11 +175,11 @@ def validate_dining(slots: dict) -> dict:
             'You can make a reservations for from one to 8 guests.  How many guests will be attending?'
         )
         
-    
     return { 'isValid': True }
 
 
 """ --- Functions that control the bot's behavior --- """
+
 
 def handle_greet(intent_request):
     """
@@ -196,16 +198,18 @@ def handle_greet(intent_request):
         intent_request['sessionState']['intent']['name']
     )
     
+
 def handle_dining_intent(intent_request: dict) -> dict:
     
     print("starting handle_dining_intent code hook")
     
-    location = try_ex(lambda: intent_request['sessionState']['intent']['slots']['Location'])
-    cuisine = try_ex(lambda: intent_request['sessionState']['intent']['slots']['Cuisine'])
+    location = try_ex(lambda: intent_request['sessionState']['intent']['slots']['location'])
+    cuisine = try_ex(lambda: intent_request['sessionState']['intent']['slots']['cuisine'])
     date = try_ex(lambda: intent_request['sessionState']['intent']['slots']['date'])
     time = try_ex(lambda: intent_request['sessionState']['intent']['slots']['time'])
     count = try_ex(lambda: intent_request['sessionState']['intent']['slots']['count'])
     phone = try_ex(lambda: intent_request['sessionState']['intent']['slots']['phone'])
+    email = try_ex(lambda: intent_request['sessionState']['intent']['slots']['email'])
     
     session_attributes = intent_request.get('sessionAttributes') if intent_request.get('sessionAttributes') is not None else {}
     
@@ -232,7 +236,8 @@ def handle_dining_intent(intent_request: dict) -> dict:
     
     elif intent_request['invocationSource'] == "FulfillmentCodeHook":
         print("invocation was FulfillmentCodeHook")
-        print("fulfillment complete")
+        send_message(location, cuisine, date, time, count, phone, email,
+                     request_id=intent_request['sessionState']['originatingRequestId'])
         return close(
             session_attributes,
             "Fulfilled",
@@ -242,8 +247,8 @@ def handle_dining_intent(intent_request: dict) -> dict:
             },
             intent_request['sessionState']['intent']['name'],
         )
-    # TODO push info to SQS
-    print("catch all")
+    
+    
     return close(
         session_attributes,
         'Fulfilled',
@@ -253,7 +258,53 @@ def handle_dining_intent(intent_request: dict) -> dict:
         },
         intent_request['sessionState']['intent']['name']
     )
-    
+
+
+def send_message(location, cuisine, date, time, count, phone, email, request_id = None) -> None:
+    sqs = boto3.client('sqs')
+    queue_url = "https://sqs.us-east-1.amazonaws.com/979351636556/YelpRestaurants.fifo"
+
+    print(f"location: {location}\n cuisine: {cuisine}\n")
+
+    response = sqs.send_message(
+        QueueUrl=queue_url,
+        MessageAttributes={
+            "location": {
+                "DataType": "String",
+                "StringValue": location["value"]["interpretedValue"],
+            },
+            "cuisine": {
+                "DataType": "String",
+                "StringValue": cuisine["value"]["interpretedValue"],
+            },
+            "date": {
+                "DataType": "String",
+                "StringValue": str(date["value"]["interpretedValue"]),
+            },
+            "count": {
+                "DataType": "Number",
+                "StringValue": count["value"]["interpretedValue"],
+            },
+            "phone": {
+                "DataType": "String",
+                "StringValue": phone["value"]["interpretedValue"],
+            },
+            "email": {
+                "DataType": "String",
+                "StringValue": email["value"]["interpretedValue"],
+            },
+            "time": {
+                "DataType": "String",
+                "StringValue": time["value"]["interpretedValue"],
+            },
+        },
+        MessageBody=f"Queried for cuisine:{cuisine['value']['interpretedValue']} in location:{location['value']['interpretedValue']}",
+        MessageGroupId=request_id,
+        MessageDeduplicationId=str(uuid4()),
+    )
+
+    print(f"SQS Response: {response}")
+
 
 def handle_thank_you(intent_request: dict) -> dict:
     session_attributes = intent_request.get('sessionAttributes') if intent_request.get('sessionAttributes') is not None else {}
