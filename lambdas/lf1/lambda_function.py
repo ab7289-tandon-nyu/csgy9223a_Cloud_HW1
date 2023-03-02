@@ -58,7 +58,7 @@ def close(session_attributes, fulfillment_state, message, intent_name):
                 'state': "Fulfilled"
             },
             'messages': [
-                message 
+                message
             ]
         }
     }
@@ -123,18 +123,19 @@ def build_validation_result(isvalid, violated_slot, message_content):
         'message': {'contentType': 'PlainText', 'content': message_content}
     }
 
+
 def isvalid_city(city):
     valid_cities = ['new york', 'los angeles', 'chicago', 'houston', 'philadelphia', 'phoenix', 'san antonio',
                     'san diego', 'dallas', 'san jose', 'austin', 'jacksonville', 'san francisco', 'indianapolis',
                     'columbus', 'fort worth', 'charlotte', 'detroit', 'el paso', 'seattle', 'denver', 'washington dc',
                     'memphis', 'boston', 'nashville', 'baltimore', 'portland']
     return city.lower() in valid_cities
-    
-    
+
+
 def isvalid_cuisine(cuisine):
-    valid_cuisines = [ 'vegetarian', 'seafood', 'indian', 'chinese', 'american', 'italian', 'japanese',
-        'mexican', 'mediterranean', 'vegan', 'chicken', 'steak', 'noodles', 'fast food', 'deli', 
-        'convenience', 'sandwiches', 'desserts', 'burgers', 'salad', 'coffee', 'thai', 'brazilian', ]
+    valid_cuisines = ['vegetarian', 'seafood', 'indian', 'chinese', 'american', 'italian', 'japanese',
+                      'mexican', 'mediterranean', 'vegan', 'chicken', 'steak', 'noodles', 'fast food', 'deli',
+                      'convenience', 'sandwiches', 'desserts', 'burgers', 'salad', 'coffee', 'thai', 'brazilian', ]
     return cuisine.lower() in valid_cuisines
 
 
@@ -146,36 +147,37 @@ def validate_dining(slots: dict) -> dict:
     time = try_ex(lambda: slots['time'])
     count = try_ex(lambda: slots['count'])
     phone = try_ex(lambda: slots['phone'])
-    
+
     if location and not isvalid_city(location['value']['interpretedValue']):
         return build_validation_result(
             False,
             "Location",
-            "We currently do not support {} as a valid Location. Can you try a different city?".format(location['value']['interpretedValue'])
+            "We currently do not support {} as a valid Location. Can you try a different city?".format(
+                location['value']['interpretedValue'])
         )
-        
+
     if cuisine and not isvalid_cuisine(cuisine['value']['interpretedValue']):
         return build_validation_result(
             False,
             "Cuisine",
-            "We currently do not support {} as a valid Cuisine. Can you try a different one?".format(cuisine['value']['interpretedValue'])
+            "We currently do not support {} as a valid Cuisine. Can you try a different one?".format(
+                cuisine['value']['interpretedValue'])
         )
-    
+
     if date:
         if not isvalid_date(date['value']['interpretedValue']):
             return build_validation_result(False, 'date', 'I did not understand your reservation date.  When would you like to make your reservation?')
         if datetime.datetime.strptime(date['value']['interpretedValue'], '%Y-%m-%d').date() <= datetime.date.today():
             return build_validation_result(False, 'date', 'Reservations must be scheduled at least one day in advance.  Can you try a different date?')
-            
-    
+
     if count is not None and (int(count['value']['interpretedValue']) < 1 or int(count['value']['interpretedValue']) > 8):
         return build_validation_result(
             False,
             'count',
             'You can make a reservations for from one to 8 guests.  How many guests will be attending?'
         )
-        
-    return { 'isValid': True }
+
+    return {'isValid': True}
 
 
 """ --- Functions that control the bot's behavior --- """
@@ -185,9 +187,11 @@ def handle_greet(intent_request):
     """
     Handles the initial greeting
     """
-    logger.debug("Recieved GreetingIntent\nintent_request: {}".format(json.dumps(intent_request)))
-    
-    session_attributes = intent_request.get('sessionAttributes') if intent_request.get('sessionAttributes') is not None else {}
+    logger.debug("Recieved GreetingIntent\nintent_request: {}".format(
+        json.dumps(intent_request)))
+
+    session_attributes = intent_request.get('sessionAttributes') if intent_request.get(
+        'sessionAttributes') is not None else {}
     return close(
         session_attributes,
         'Fulfilled',
@@ -197,43 +201,52 @@ def handle_greet(intent_request):
         },
         intent_request['sessionState']['intent']['name']
     )
-    
+
 
 def handle_dining_intent(intent_request: dict) -> dict:
-    
+
     print("starting handle_dining_intent code hook")
-    
-    location = try_ex(lambda: intent_request['sessionState']['intent']['slots']['location'])
-    cuisine = try_ex(lambda: intent_request['sessionState']['intent']['slots']['cuisine'])
-    date = try_ex(lambda: intent_request['sessionState']['intent']['slots']['date'])
-    time = try_ex(lambda: intent_request['sessionState']['intent']['slots']['time'])
-    count = try_ex(lambda: intent_request['sessionState']['intent']['slots']['count'])
-    phone = try_ex(lambda: intent_request['sessionState']['intent']['slots']['phone'])
-    email = try_ex(lambda: intent_request['sessionState']['intent']['slots']['email'])
-    
-    session_attributes = intent_request.get('sessionAttributes') if intent_request.get('sessionAttributes') is not None else {}
-    
+
+    location = try_ex(
+        lambda: intent_request['sessionState']['intent']['slots']['location'])
+    cuisine = try_ex(
+        lambda: intent_request['sessionState']['intent']['slots']['cuisine'])
+    date = try_ex(
+        lambda: intent_request['sessionState']['intent']['slots']['date'])
+    time = try_ex(
+        lambda: intent_request['sessionState']['intent']['slots']['time'])
+    count = try_ex(
+        lambda: intent_request['sessionState']['intent']['slots']['count'])
+    phone = try_ex(
+        lambda: intent_request['sessionState']['intent']['slots']['phone'])
+    email = try_ex(
+        lambda: intent_request['sessionState']['intent']['slots']['email'])
+
+    session_attributes = intent_request.get('sessionAttributes') if intent_request.get(
+        'sessionAttributes') is not None else {}
+
     if intent_request['invocationSource'] == 'DialogCodeHook':
         print("invocation source was DialogCodeHook")
         # validate any slots which have been specified. If any are invalid re-elicit for their value
-        validation_result = validate_dining(intent_request['sessionState']['intent']['slots'])
+        validation_result = validate_dining(
+            intent_request['sessionState']['intent']['slots'])
         if not validation_result['isValid']:
-            
+
             slots = intent_request['sessionState']['intent']['slots']
             slots[validation_result['violatedSlot']] = None
-            
+
             return elicit_slot(
-                    session_attributes,
-                    intent_request['sessionState']['intent']['name'],
-                    slots,
-                    validation_result['violatedSlot'],
-                    validation_result['message'],
-                )
-        
+                session_attributes,
+                intent_request['sessionState']['intent']['name'],
+                slots,
+                validation_result['violatedSlot'],
+                validation_result['message'],
+            )
+
         # continue eliciting slots if need be
         return delegate(session_attributes, intent_request['sessionState']['intent']['slots'],
-            intent_request['sessionState']['intent']['name'])
-    
+                        intent_request['sessionState']['intent']['name'])
+
     elif intent_request['invocationSource'] == "FulfillmentCodeHook":
         print("invocation was FulfillmentCodeHook")
         send_message(location, cuisine, date, time, count, phone, email,
@@ -247,8 +260,7 @@ def handle_dining_intent(intent_request: dict) -> dict:
             },
             intent_request['sessionState']['intent']['name'],
         )
-    
-    
+
     return close(
         session_attributes,
         'Fulfilled',
@@ -260,7 +272,7 @@ def handle_dining_intent(intent_request: dict) -> dict:
     )
 
 
-def send_message(location, cuisine, date, time, count, phone, email, request_id = None) -> None:
+def send_message(location, cuisine, date, time, count, phone, email, request_id=None) -> None:
     sqs = boto3.client('sqs')
     queue_url = "https://sqs.us-east-1.amazonaws.com/979351636556/YelpRestaurants.fifo"
 
@@ -307,7 +319,8 @@ def send_message(location, cuisine, date, time, count, phone, email, request_id 
 
 
 def handle_thank_you(intent_request: dict) -> dict:
-    session_attributes = intent_request.get('sessionAttributes') if intent_request.get('sessionAttributes') is not None else {}
+    session_attributes = intent_request.get('sessionAttributes') if intent_request.get(
+        'sessionAttributes') is not None else {}
     return close(
         session_attributes,
         "Fulfilled",
@@ -327,7 +340,8 @@ def dispatch(intent_request):
     Called when the user specifies an intent for this bot.
     """
     print(intent_request)
-    logger.debug('dispatch intentName={}'.format(intent_request['sessionState']['intent']['name']))
+    logger.debug('dispatch intentName={}'.format(
+        intent_request['sessionState']['intent']['name']))
 
     intent_name = intent_request['sessionState']['intent']['name']
 
@@ -354,7 +368,7 @@ def lambda_handler(event, context):
     os.environ['TZ'] = 'America/New_York'
     time.tzset()
     # botname = ""
-    
+
     # logger.debug('event.bot.name={}'.format(event['bot']['name']))
     logger.debug("event received.\n{}".format(event))
 
