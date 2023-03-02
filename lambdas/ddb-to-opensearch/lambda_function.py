@@ -20,6 +20,7 @@ headers: dict = {"Content-Type": "application/json"}
 
 # TODO update with newly created credentials
 
+
 def try_old_image(record):
     try:
         return record['dynamodb']['OldImage']['Cuisine']['S']
@@ -40,7 +41,7 @@ def lambda_handler(event, context):
             id: str = record['dynamodb']['Keys']['id']['S']
         except:
             print(f"Unable to parse id from record\n{record}")
-            
+
         try:
             cuisine: str = record['dynamodb']['NewImage']['Cuisine']['S']
         except Exception as e:
@@ -57,10 +58,11 @@ def lambda_handler(event, context):
                 print(f"{r.status_code} status returned from DEL {url + id}")
 
         else:
-            document = {"id": id, "Cuisine": cuisine }
-            r = requests.post(url, json=document, headers=headers, auth=basicauth)
+            document = {"id": id, "Cuisine": cuisine}
+            r = requests.post(url, json=document,
+                              headers=headers, auth=basicauth)
             inserted += 1
             if r.status_code != 200:
                 print(f"{r.status_code} returned from POST {url} - json: {document}")
-    
+
     return f"inserted {inserted}, deleted: {deleted}"
