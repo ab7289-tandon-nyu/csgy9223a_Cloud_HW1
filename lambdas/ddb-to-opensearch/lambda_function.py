@@ -2,13 +2,10 @@ import boto3
 import requests
 import os
 from requests.auth import HTTPBasicAuth
-from requests_aws4auth import AWS4Auth
 
 region: str = "us-east-1"
 service: str = "es"
-credentials = boto3.Session().get_credentials()
-awsauth = AWS4Auth(credentials.access_key, credentials.secret_key,
-                   region, service, session_token=credentials.token)
+
 basicauth = HTTPBasicAuth(os.getenv("OS_USER"), os.getenv("OS_PASSWORD"))
 
 host: str = "https://search-csgy9223a-hw1-dining-wt7iphrqwwnp6pzz4i37djulsq.us-east-1.es.amazonaws.com"
@@ -17,8 +14,6 @@ datatype: str = "_doc"
 url: str = host + "/" + index + "/" + datatype + "/"
 
 headers: dict = {"Content-Type": "application/json"}
-
-# TODO update with newly created credentials
 
 
 def try_old_image(record):
@@ -58,6 +53,7 @@ def lambda_handler(event, context):
                 print(f"{r.status_code} status returned from DEL {url + id}")
 
         else:
+            # for each added restaurant, update our index with its ID and cuisine
             document = {"id": id, "Cuisine": cuisine}
             r = requests.post(url, json=document,
                               headers=headers, auth=basicauth)
